@@ -14,7 +14,7 @@ class SOM():
     http://syllabus.cs.manchester.ac.uk/pgt/2017/COMP61021/reference/parallel-batch-SOM.pdf
     """
 
-    def __init__(self, ds, field_name, rows=5, cols=7, lr=1, max_epoch=1000):
+    def __init__(self, ds, field_name, rows=5, cols=7, lr=1, max_epoch=1000, fn=None):
         """
         :param ds: has n rows (= number of observations)
                which are dim long (number of features per observation)
@@ -42,11 +42,14 @@ class SOM():
         self.max_epoch = max_epoch
 
         #set initial vectors
-        self.map = np.random.choice(self.records.flatten(), size=(self.rows, self.cols, self.dim), replace=False)
-        self.nodes = np.arange(rows*cols)
-        for node in self.nodes:
-            indx = np.unravel_index(node, self.shape)
-            self.map[indx[0], indx[1], :] = self.records[math.floor(node * self.observation_count / (rows * cols)), :]
+        if fn:
+            map_ds = xr.open_dataset(fn)
+        else:
+            self.map = np.random.choice(self.records.flatten(), size=(self.rows, self.cols, self.dim), replace=False)
+            self.nodes = np.arange(rows*cols)
+            for node in self.nodes:
+                indx = np.unravel_index(node, self.shape)
+                self.map[indx[0], indx[1], :] = self.records[math.floor(node * self.observation_count / (rows * cols)), :]
 
         #current observation for computation
         self.current_obs = self.records[0, :]
