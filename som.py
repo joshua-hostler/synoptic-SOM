@@ -14,7 +14,7 @@ class SOM():
     http://syllabus.cs.manchester.ac.uk/pgt/2017/COMP61021/reference/parallel-batch-SOM.pdf
     """
 
-    def __init__(self, ds, field_name, rows=5, cols=7, lr=1, max_epoch=1000):
+    def __init__(self, rows, cols, dim):
         """
         :param ds: has n rows (= number of observations)
                which are dim long (number of features per observation)
@@ -24,44 +24,11 @@ class SOM():
         :param sigma: neighborhood scaling
         :param max_iter: maximum iterations
         """
-        #training set should be shape (n, dim) where dim is the number of features per observation
-        self.dim = ds[field_name].values.shape[1] * ds[field_name].values.shape[2]
-        self.geoshape = (ds[field_name].values.shape[1], ds[field_name].values.shape[2])
-        self.observation_count = ds[field_name].values.shape[0]
-        self.ds = ds
-        print(type(self.ds))
-        self.field_mean = ds[field_name].values.mean()
-        #self.records = np.true_divide(ds[field_name].values.reshape(self.observation_count, self.dim), self.field_mean)
-        self.records =ds[field_name].values.reshape(self.observation_count, self.dim)
         self.rows = rows
         self.cols = cols
-        self.shape = (rows, cols)
-        self.init_lr = lr
-        self.lr = lr
-        self.sigma = max(rows, cols) / 2
-        self.max_epoch = max_epoch
-
-        #set initial vectors
-        self.map = np.random.choice(self.records.flatten(), size=(self.rows, self.cols, self.dim), replace=False)
-        self.nodes = np.arange(rows*cols)
-        for node in self.nodes:
-            indx = np.unravel_index(node, self.shape)
-            self.map[indx[0], indx[1], :] = self.records[math.floor(node * self.observation_count / (rows * cols)), :]
-
-        #current observation for computation
-        self.current_obs = self.records[0, :]
-
-        self.current_epoch = 0
-        self.current_iter = 0
-        self.dists = None
-        self.hck = None
-        self.diffs = None
-        self.current_winning_node = None
-        self.labels = None
-        self.second_best_labels = None
-        self.node_count = None
-        self.te = None
-        self.qe = None
+        self.dim = dim
+        midx = pd.MultiIndex.from_product([np.arange(rows), np.arange(cols)])
+        self.nodes = pd.DataFrame(index=midx, columns=np.arange(dim))
 
     # return the index of the closest node for an observation
     def winning_node(self):
