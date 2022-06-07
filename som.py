@@ -262,6 +262,7 @@ class plsom(SOM):
         ds.to_netcdf(os.path.join(path, name))
         #summary file w/ metrics, summary stats, errors
         #the mapping
+        #test commit comment
         #plots
 
 
