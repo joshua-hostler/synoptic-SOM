@@ -31,12 +31,13 @@ class SOM():
         self.nodes = pd.DataFrame(index=midx, columns=np.arange(dim))
 
     # return the index of the closest node for an observation
-    def winning_node(self):
+    def winning_node(self, v):
 
-        self.diffs = np.subtract(self.current_obs, self.map)
-        self.dists = np.linalg.norm(self.diffs, axis=2)
-        self.current_winning_node = np.unravel_index(np.argmin(self.dists, axis=None), self.dists.shape)
+        diffs = np.subtract(v, self.nodes)
+        dists = np.linalg.norm(diffs, axis=2)
+        idx = np.unravel_index(np.argmin(self.dists, axis=None), self.dists.shape)
 
+        return idx
 
     #update map weights, current_epoch, learning rate, sigma
     def update(self):
@@ -54,17 +55,29 @@ class SOM():
                 hck = math.exp(0.0 - (squared_norm) / (sigma * sigma))
                 self.map[idx] = self.map[idx] + lr*hck*(self.current_obs - self.map[idx])
 
-
     #train the SOM
-    def fit(self):
-        for i in range(self.max_epoch):
-            self.update()
-            self.current_epoch += 1
-            if self.current_epoch % (self.max_epoch / 10) == 0: print(self.current_epoch)
-
-
-    def update_lr(self, lr):
-        self.lr = lr
+    def fit(self, obs, lr, epoch):
+        obs_count = obs.shape[0]
+        sigma = max(self.rows,self.cols) / 2
+        a = self.nodes.index.to_numpy()
+        x = map(np.array, a)
+        arr = np.array(list(x))
+        for i in range(epoch):
+            lamb = epoch * obs_count / math.log10(sigma)
+            pct = 1 - (i / epoch)
+            sigma = sigma * math.exp((-i * epoch)/ lamb)
+            lr = self.lr * pct
+            for o in range(obs_count):
+                bmu = self.winning_node(obs[o, :])
+                diffs = arr - bmu
+                norms = np.linalg.norm(diffs, axis=1)
+                hck = np.exp(-np.square(norms / sigma))
+                self.nodes = self.nodes + lr*hck*(obs[o, :] - self.nodes)
+                '''for idx in self.nodes.index:
+                    squared_norm = ((idx[0] - bmu[0]) ** 2) + ((idx[1] - bmu[1]) ** 2)
+                    hck = math.exp(0.0 - (squared_norm) / (sigma * sigma))
+                    self.map[idx] = self.map[idx] + lr * hck * (self.current_obs - self.map[idx])'''
+            if i % (epoch / 10) == 0: print(1-pct)
 
     def u_matrix(self):
         um = np.empty(shape=self.shape)
