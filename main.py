@@ -21,11 +21,19 @@ def main():
     #flatten the pressure data array
     #training_data = np.true_divide(ds_june.slp.values.reshape((2160, 629)), 100.00)
 
-    mymap = som.plsom(ds=ds, field_name='z', events=events_df, rows=5, cols=7, lr=1, max_epoch=50)
+    dim = ds['z'].values.shape[1]*ds['z'].values.shape[2]
+    count = ds['z'].values.shape[0]
+    print('obs count: ', count)
+    print('dim: ', dim)
+    vals = ds['z'].values.reshape(count, dim)
+    idx = np.random.randint(count, size=35)
+    data = vals[idx,:]
+
+    mymap = som.SOM(rows=5, cols=7, dim=dim, data=data)
 
     #mymap.plot_nodes()
-
-    mymap.fit()
+    mymap.fit(obs=vals, lr=1, epoch=50)
+    print(mymap.nodes)
 
     mymap.plot_nodes()
 
