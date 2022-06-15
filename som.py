@@ -14,7 +14,7 @@ class SOM():
     http://syllabus.cs.manchester.ac.uk/pgt/2017/COMP61021/reference/parallel-batch-SOM.pdf
     """
 
-    def __init__(self, rows, cols, dim):
+    def __init__(self, rows, cols, dim, data):
         """
         :param ds: has n rows (= number of observations)
                which are dim long (number of features per observation)
@@ -28,18 +28,18 @@ class SOM():
         self.cols = cols
         self.dim = dim
         midx = pd.MultiIndex.from_product([np.arange(rows), np.arange(cols)])
-        self.nodes = pd.DataFrame(index=midx, columns=np.arange(dim))
+        self.nodes = pd.DataFrame(data=data, index=midx, columns=np.arange(dim))
 
     # return the index of the closest node for an observation
-    def winning_node(self, v):
+    def winning_node(self, v, nodes):
 
-        diffs = np.subtract(v, self.nodes)
-        dists = np.linalg.norm(diffs, axis=2)
-        idx = np.unravel_index(np.argmin(self.dists, axis=None), self.dists.shape)
+        diffs = np.subtract(v, nodes)
+        dists = np.linalg.norm(diffs, axis=1)
+        idx = np.unravel_index(np.argmin(dists, axis=None), dists.shape)
 
-        return idx
+        return idx[0]
 
-    #update map weights, current_epoch, learning rate, sigma
+    '''#update map weights, current_epoch, learning rate, sigma
     def update(self):
         lamb = self.max_epoch * self.observation_count / math.log10(self.sigma)
         pct = 1 - (self.current_iter / (self.max_epoch * self.observation_count))
@@ -53,7 +53,7 @@ class SOM():
                 idx = np.unravel_index(node, self.shape)
                 squared_norm = ((idx[0]-self.current_winning_node[0]) ** 2) + ((idx[1] - self.current_winning_node[1]) ** 2)
                 hck = math.exp(0.0 - (squared_norm) / (sigma * sigma))
-                self.map[idx] = self.map[idx] + lr*hck*(self.current_obs - self.map[idx])
+                self.map[idx] = self.map[idx] + lr*hck*(self.current_obs - self.map[idx])'''
 
     #train the SOM
     def fit(self, obs, lr, epoch):
@@ -62,22 +62,27 @@ class SOM():
         a = self.nodes.index.to_numpy()
         x = map(np.array, a)
         arr = np.array(list(x))
+        nodes = self.nodes.values
+        print('fitting')
         for i in range(epoch):
             lamb = epoch * obs_count / math.log10(sigma)
             pct = 1 - (i / epoch)
             sigma = sigma * math.exp((-i * epoch)/ lamb)
-            lr = self.lr * pct
+            lr_i = lr * pct
             for o in range(obs_count):
-                bmu = self.winning_node(obs[o, :])
-                diffs = arr - bmu
+                obs_o = obs[o, :]
+                bmu = self.winning_node(obs_o, nodes)
+                diffs = arr - arr[bmu]
                 norms = np.linalg.norm(diffs, axis=1)
                 hck = np.exp(-np.square(norms / sigma))
-                self.nodes = self.nodes + lr*hck*(obs[o, :] - self.nodes)
+                nodes = nodes + lr_i*hck[:, None]*(obs_o - nodes)
                 '''for idx in self.nodes.index:
                     squared_norm = ((idx[0] - bmu[0]) ** 2) + ((idx[1] - bmu[1]) ** 2)
                     hck = math.exp(0.0 - (squared_norm) / (sigma * sigma))
                     self.map[idx] = self.map[idx] + lr * hck * (self.current_obs - self.map[idx])'''
-            if i % (epoch / 10) == 0: print(1-pct)
+            print(i)
+            #if i % (epoch / 10) == 0: print(1-pct)
+        self.nodes = nodes
 
     def u_matrix(self):
         um = np.empty(shape=self.shape)
