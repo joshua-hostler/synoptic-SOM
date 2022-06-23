@@ -14,7 +14,7 @@ class SOM():
     http://syllabus.cs.manchester.ac.uk/pgt/2017/COMP61021/reference/parallel-batch-SOM.pdf
     """
 
-    def __init__(self, rows, cols, dim, data):
+    def __init__(self, rows, cols, dim):
         """
         :param ds: has n rows (= number of observations)
                which are dim long (number of features per observation)
@@ -28,16 +28,17 @@ class SOM():
         self.cols = cols
         self.dim = dim
         midx = pd.MultiIndex.from_product([np.arange(rows), np.arange(cols)])
-        self.nodes = pd.DataFrame(data=data, index=midx, columns=np.arange(dim))
+        self.nodes = pd.DataFrame(index=midx, columns=np.arange(dim))
 
     # return the index of the closest node for an observation
     def winning_node(self, v, nodes):
 
         diffs = np.subtract(v, nodes)
         dists = np.linalg.norm(diffs, axis=1)
-        idx = np.unravel_index(np.argmin(dists, axis=None), dists.shape)
+        idx = np.argmin(dists, axis=None)
+        # idx = np.unravel_index(np.argmin(dists, axis=None), dists.shape)
 
-        return idx[0]
+        return idx
 
     '''#update map weights, current_epoch, learning rate, sigma
     def update(self):
@@ -58,31 +59,78 @@ class SOM():
     #train the SOM
     def fit(self, obs, lr, epoch):
         obs_count = obs.shape[0]
-        sigma = max(self.rows,self.cols) / 2
+        nodes = np.random.choice(obs.flatten(), size=(self.rows * self.cols, self.dim), replace=False)
+        sigma_0 = max(self.rows,self.cols) / 2
         a = self.nodes.index.to_numpy()
         x = map(np.array, a)
         arr = np.array(list(x))
-        nodes = self.nodes.values
         print('fitting')
+        lamb = epoch * obs_count / math.log10(sigma_0)
         for i in range(epoch):
-            lamb = epoch * obs_count / math.log10(sigma)
             pct = 1 - (i / epoch)
-            sigma = sigma * math.exp((-i * epoch)/ lamb)
+            sigma = sigma_0 * math.exp((-i * epoch)/ lamb)
             lr_i = lr * pct
             for o in range(obs_count):
                 obs_o = obs[o, :]
                 bmu = self.winning_node(obs_o, nodes)
-                diffs = arr - arr[bmu]
+                #broadcast update, slower on cpu cause of memory handling.
+                '''diffs = arr - arr[bmu]
                 norms = np.linalg.norm(diffs, axis=1)
                 hck = np.exp(-np.square(norms / sigma))
-                nodes = nodes + lr_i*hck[:, None]*(obs_o - nodes)
-                '''for idx in self.nodes.index:
-                    squared_norm = ((idx[0] - bmu[0]) ** 2) + ((idx[1] - bmu[1]) ** 2)
+                nodes = nodes + lr_i*hck[:, None]*(obs_o - nodes)'''
+                #sequential update.
+                for idx in range(self.rows * self.cols):
+                    squared_norm = ((arr[idx][0] - arr[bmu][0]) ** 2) + ((arr[idx][1] - arr[bmu][1]) ** 2)
                     hck = math.exp(0.0 - (squared_norm) / (sigma * sigma))
-                    self.map[idx] = self.map[idx] + lr * hck * (self.current_obs - self.map[idx])'''
+                    nodes[idx] = nodes[idx] + lr_i * hck * (obs_o - nodes[idx])
             print(i)
             #if i % (epoch / 10) == 0: print(1-pct)
-        self.nodes = nodes
+        self.nodes[:] = nodes.copy()
+
+    def mk_labels(self, obs):
+        obs_count = obs.shape[0]
+        nodes = self.nodes.values.astype(float)
+        idxs = self.nodes.index
+        labels = np.empty((obs_count, 2), dtype=int)
+        #self.second_best_labels = self.labels
+        #self.node_count = np.zeros((self.rows, self.cols), dtype=int)
+        #self.errors = np.empty(self.observation_count, dtype=float)
+        #te = 0
+        #qe = 0
+        for o in range(obs_count):
+            obs_o = obs[o, :].astype(float)
+            bmu = self.winning_node(obs_o, nodes)
+            labels[o, :] = idxs[bmu]
+            #self.node_count[idx] += 1
+            #flat_dists = np.ravel(self.dists)
+            #sbn = np.unravel_index(np.argsort(flat_dists)[1], self.shape)
+            #self.second_best_labels[obs, :] = sbn
+            #if np.linalg.norm(np.asarray(sbn) - np.asarray(idx)) > math.sqrt(2):
+            #    te += 1.0
+            #qe = qe + self.dists[idx]
+
+        #self.te = te / self.observation_count
+        #self.qe = qe / self.observation_count
+        return labels
+
+    def to_csv(self, path): #save SOM to csv at path
+        self.nodes.to_csv(path)
+
+    @classmethod
+    def from_csv(cls, path):
+        '''
+        Constructs a SOM object with information from csv at path.
+        :param path: Path to csv file.
+        :return: Instance of SOM.
+        '''
+        nodes = pd.read_csv(path, index_col=[0,1])
+        rows = nodes.index.levshape[0]
+        cols = nodes.index.levshape[1]
+        dim = nodes.shape[1]
+        obj = cls(rows=rows, cols=cols, dim=dim)
+        obj.nodes[:] = nodes.values.astype(float)
+
+        return obj
 
     def u_matrix(self):
         um = np.empty(shape=self.shape)
@@ -148,50 +196,70 @@ class SOM():
         ax.invert_yaxis()
         plt.show()
 
-    def mk_labels(self):
-        self.labels = np.empty((self.observation_count, 2), dtype=int)
-        self.second_best_labels = self.labels
-        self.node_count = np.zeros((self.rows, self.cols), dtype=int)
-        self.errors = np.empty(self.observation_count, dtype=float)
-        te = 0
-        qe = 0
-        for obs in range(self.observation_count):
-            self.current_obs = self.records[obs, :]
-            self.winning_node()
-            self.labels[obs, :] = self.current_winning_node
-            idx = self.current_winning_node
-            self.node_count[idx] += 1
-            flat_dists = np.ravel(self.dists)
-            sbn = np.unravel_index(np.argsort(flat_dists)[1], self.shape)
-            self.second_best_labels[obs, :] = sbn
-            if np.linalg.norm(np.asarray(sbn) - np.asarray(idx)) > math.sqrt(2):
-                te += 1.0
-            qe = qe + self.dists[idx]
 
-        self.te = te / self.observation_count
-        self.qe = qe / self.observation_count
-
-class plsom(SOM):
-    def __init__(self, ds, field_name, events, rows=5, cols=7, lr=1, max_epoch=1000):
-        super().__init__(ds, field_name, rows, cols, lr, max_epoch)
-        #self.pl_shape = pl_shape #shape of the pressure grid
-        self.events = events #list of dates for event analysis
-        self.event_count = np.zeros(self.shape, dtype=int)
+class GeoSOM(SOM):
+    def __init__(self, rows, cols, dim, lons, lats, attrs=None):
+        super().__init__(rows, cols, dim)
+        self.lats = lats
+        self.lons = lons
+        self.geoshape = tuple((lats.shape[0], lons.shape[0]))
+        if attrs:
+            self.attrs = attrs
         #self.events.LOCALDATET = self.events.LOCALDATET.apply(lambda y: dt.strptime(y, '%m/%d/%Y %X'))
+
+    def to_netCDF(self, path):
+        midx = pd.MultiIndex.from_product([np.arange(self.rows),
+                                           np.arange(self.cols),
+                                           self.lons,
+                                           self.lats], names=['row', 'column', 'longitude', 'latitude'])
+        data = self.nodes.values.flatten()
+
+        df = pd.DataFrame(index=midx, data=data)
+        ds = xr.Dataset.from_dataframe(df)
+        ds.to_netcdf(path=path)
+
+    @classmethod
+    def from_netCDF(cls, path):
+        ds = xr.open_dataset(path)
+        lons = ds['longitude'].values
+        lats = ds['latitude'].values
+        dim = lons.shape[0]*lats.shape[0]
+        rows = ds.dims['row']
+        cols = ds.dims['column']
+        obj = cls(rows=rows, cols=cols, dim=dim, lons=lons, lats=lats)
+
+        return obj
 
     # plot the trained som nodes in a N x M grid
     def plot_nodes(self):
         N = self.rows
         M = self.cols
         plt.rcParams.update({'figure.autolayout': True})
-        fig, axs = plt.subplots(N, M, figsize=(11, 8.5))
-        fig.suptitle(
-            'SOM arrangement of 500hPa geopotentials over Alaska for MJJAS',
-            fontsize=20)
+        fig, axs = plt.subplots(N, M, figsize=(11, 8.5),
+                                subplot_kw={'projection': ccrs.Mercator(central_longitude=190.0,
+                                                                        min_latitude=40.0,
+                                                                        max_latitude=75.0)})
+        clevs = np.linspace(np.min(self.nodes.values), np.max(self.nodes.values), 12)
+        fig.suptitle('SOM arrangement of 500hPa geopotential heights over Alaska for MJJAS', fontsize=20)
 
-        for i in range(N):
+        for idx in self.nodes.index:
+            axs[idx].contourf(self.lons,
+                              self.lats,
+                              self.nodes.loc[idx].values.reshape(self.geoshape),
+                              clevs,
+                              transform=ccrs.PlateCarree(),
+                              cmap='inferno')
+            axs[idx].set_title(f'{idx}')
+            axs[idx].coastlines()
+
+        '''for i in range(N):
             for j in range(M):
-                axs[i, j].contourf(self.map[i, j, :].reshape(self.geoshape))
+                axs[i, j].contourf(self.lons,
+                                  self.lats,
+                                  self.nodes.loc[(i,j)].values.reshape(self.geoshape), transform=ccrs.PlateCarree(),
+                                   cmap='inferno')
+                axs[i, j].coastlines()
+                axs[i, j].set_title(f'{i}, {j}')'''
 
         plt.show()
 
@@ -237,14 +305,6 @@ class plsom(SOM):
                                **text_kwargs1)
                 '''
         plt.show()
-
-
-    def save(self, name): #save outputs to a directory at path
-        path = os.getcwd()
-        midx = pd.MultiIndex.from_product([np.arange(self.rows), np.arange(self.cols), self.ds['longitude'].values, self.ds['latitude'].values], names=['row', 'col', 'lon', 'lat'])
-        df = pd.DataFrame(data={'z': self.map.flatten()}, index=midx)
-        ds = xr.Dataset.from_dataframe(df)
-        ds.to_netcdf(os.path.join(path, name))
         #summary file w/ metrics, summary stats, errors
         #the mapping
         #test commit comment

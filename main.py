@@ -8,6 +8,8 @@ import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 #from osgeo import gdal
 
+def date_to_midx(dates):
+    dates['day'] = dates['date'].
 
 def main():
     #open file
@@ -26,24 +28,25 @@ def main():
     print('obs count: ', count)
     print('dim: ', dim)
     vals = ds['z'].values.reshape(count, dim)
+
     idx = np.random.randint(count, size=35)
     data = vals[idx,:]
 
-    mymap = som.SOM(rows=5, cols=7, dim=dim, data=data)
+    mymap = som.SOM(rows=5, cols=7, dim=dim)
 
-    #mymap.plot_nodes()
-    mymap.fit(obs=vals, lr=1, epoch=50)
-    print(mymap.nodes)
+    mymap.fit(obs=vals, lr=1, epoch=500)
+    mymap.to_csv('500epoch_take2.csv')
+    labels = mymap.mk_labels(vals)
+    print(labels)
+
+    secondmap = SOM.from_csv('test.csv')
+    labels = secondmap.mk_labels(vals)
+    print(labels)
+
+    print(mymap.nodes == secondmap.nodes)
 
     mymap.plot_nodes()
 
-    #next steps
-    #non-random steps
-    #PCA
-    #basemap
-    #polar coords
-    mymap.u_matrix()
-    mymap.mk_labels()
     print(mymap.node_count)
     mymap.count_events()
     #mymap.plot_events()
