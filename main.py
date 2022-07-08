@@ -8,8 +8,6 @@ import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 #from osgeo import gdal
 
-def date_to_midx(dates):
-    dates['day'] = dates['date'].
 
 def main():
     #open file
@@ -39,7 +37,7 @@ def main():
     labels = mymap.mk_labels(vals)
     print(labels)
 
-    secondmap = SOM.from_csv('test.csv')
+    secondmap = som.SOM.from_csv('test.csv')
     labels = secondmap.mk_labels(vals)
     print(labels)
 

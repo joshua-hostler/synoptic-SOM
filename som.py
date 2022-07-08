@@ -210,11 +210,11 @@ class GeoSOM(SOM):
     def to_netCDF(self, path):
         midx = pd.MultiIndex.from_product([np.arange(self.rows),
                                            np.arange(self.cols),
-                                           self.lons,
-                                           self.lats], names=['row', 'column', 'longitude', 'latitude'])
+                                           self.lats.values,
+                                           self.lons.values], names=['row', 'column', 'latitude', 'longitude'])
         data = self.nodes.values.flatten()
 
-        df = pd.DataFrame(index=midx, data=data)
+        df = pd.DataFrame(index=midx, data={'field': data})
         ds = xr.Dataset.from_dataframe(df)
         ds.to_netcdf(path=path)
 
@@ -227,6 +227,10 @@ class GeoSOM(SOM):
         rows = ds.dims['row']
         cols = ds.dims['column']
         obj = cls(rows=rows, cols=cols, dim=dim, lons=lons, lats=lats)
+        for r in range(rows):
+            for c in range(cols):
+                obj.nodes.loc[r,c] = ds.field.values[r,c,:,:].reshape(lats.shape[0]*lons.shape[0])
+        '''obj.nodes[:] = ds.field.values.reshape(rows*cols, lats.shape[0]*lons.shape[0])'''
 
         return obj
 
@@ -243,23 +247,17 @@ class GeoSOM(SOM):
         fig.suptitle('SOM arrangement of 500hPa geopotential heights over Alaska for MJJAS', fontsize=20)
 
         for idx in self.nodes.index:
+            z = self.nodes.loc[idx].values
+            z = z.reshape(self.geoshape)
             axs[idx].contourf(self.lons,
                               self.lats,
-                              self.nodes.loc[idx].values.reshape(self.geoshape),
+                              z,
                               clevs,
                               transform=ccrs.PlateCarree(),
                               cmap='inferno')
             axs[idx].set_title(f'{idx}')
             axs[idx].coastlines()
-
-        '''for i in range(N):
-            for j in range(M):
-                axs[i, j].contourf(self.lons,
-                                  self.lats,
-                                  self.nodes.loc[(i,j)].values.reshape(self.geoshape), transform=ccrs.PlateCarree(),
-                                   cmap='inferno')
-                axs[i, j].coastlines()
-                axs[i, j].set_title(f'{i}, {j}')'''
+            axs[idx].set_extent((170, 240, 45, 75))
 
         plt.show()
 
@@ -309,6 +307,8 @@ class GeoSOM(SOM):
         #the mapping
         #test commit comment
         #plots
+
+
 
 
 
