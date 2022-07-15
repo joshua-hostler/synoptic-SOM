@@ -32,8 +32,8 @@ def main():
 
     mymap = som.SOM(rows=5, cols=7, dim=dim)
 
-    mymap.fit(obs=vals, lr=1, epoch=500)
-    mymap.to_csv('500epoch_take2.csv')
+    mymap.fit(obs=vals, lr=1, epoch=1000)
+    mymap.to_csv('1000epoch.csv')
     labels = mymap.mk_labels(vals)
     print(labels)
 
