@@ -7,6 +7,7 @@ import math
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 import cartopy.crs as ccrs
+import cupy as cp
 
 class SOM():
     """
@@ -33,9 +34,9 @@ class SOM():
     # return the index of the closest node for an observation
     def winning_node(self, v, nodes):
 
-        diffs = np.subtract(v, nodes)
-        dists = np.linalg.norm(diffs, axis=1)
-        idx = np.argmin(dists, axis=None)
+        diffs = cp.subtract(v, nodes)
+        dists = cp.linalg.norm(diffs, axis=1)
+        idx = cp.argmin(dists, axis=None)
         # idx = np.unravel_index(np.argmin(dists, axis=None), dists.shape)
 
         return idx
@@ -57,35 +58,39 @@ class SOM():
                 self.map[idx] = self.map[idx] + lr*hck*(self.current_obs - self.map[idx])'''
 
     #train the SOM
-    def fit(self, obs, lr, epoch):
-        obs_count = obs.shape[0]
-        nodes = np.random.choice(obs.flatten(), size=(self.rows * self.cols, self.dim), replace=False)
+    def fit(self, obs_cpu, lr, epoch):
+        obs_count = obs_cpu.shape[0]
+        nodes_cpu = np.random.choice(obs_cpu.flatten(), size=(self.rows * self.cols, self.dim), replace=False)
+        nodes_gpu = cp.asarray(nodes_cpu)
         sigma_0 = max(self.rows,self.cols) / 2
         a = self.nodes.index.to_numpy()
         x = map(np.array, a)
-        arr = np.array(list(x))
+        arr_cpu = np.array(list(x))
+        arr_gpu = cp.asarray(arr_cpu)
         print('fitting')
         lamb = epoch * obs_count / math.log10(sigma_0)
         for i in range(epoch):
-            pct = 1 - (i / epoch)
-            sigma = sigma_0 * math.exp((-i * epoch)/ lamb)
-            lr_i = lr * pct
+            pct_cpu = 1 - (i / epoch)
+            sigma_cpu = sigma_0 * math.exp((-i * epoch)/ lamb)
+            lr_i_cpu = lr * pct_cpu
+
+            sigma_gpu = cp.asarray(sigma_cpu)
+            lr_i_gpu = cp.asarray(lr_i_cpu)
             for o in range(obs_count):
-                obs_o = obs[o, :]
-                bmu = self.winning_node(obs_o, nodes)
-                #broadcast update, slower on cpu cause of memory handling.
-                '''diffs = arr - arr[bmu]
-                norms = np.linalg.norm(diffs, axis=1)
-                hck = np.exp(-np.square(norms / sigma))
-                nodes = nodes + lr_i*hck[:, None]*(obs_o - nodes)'''
-                #sequential update.
-                for idx in range(self.rows * self.cols):
-                    squared_norm = ((arr[idx][0] - arr[bmu][0]) ** 2) + ((arr[idx][1] - arr[bmu][1]) ** 2)
-                    hck = math.exp(0.0 - (squared_norm) / (sigma * sigma))
-                    nodes[idx] = nodes[idx] + lr_i * hck * (obs_o - nodes[idx])
+                obs_gpu_o = cp.asarray(obs_cpu[o,:])
+                bmu = self.winning_node(obs_gpu_o, nodes_gpu)
+                diffs = arr_gpu - arr_gpu[bmu]
+                norms = cp.linalg.norm(diffs, axis=1)
+                hck = cp.exp(-cp.square(norms / sigma_gpu))
+                nodes_gpu = nodes_gpu + lr_i_gpu*hck[:, None]*(obs_gpu_o - nodes_gpu)
+                #sequential update: slower on gpu because gpu benefits from large arrays
+                '''for idx in range(self.rows * self.cols):
+                    squared_norm = ((arr_gpu[idx][0] - arr_gpu[bmu][0]) ** 2) + ((arr_gpu[idx][1] - arr_gpu[bmu][1]) ** 2)
+                    hck = math.exp(0.0 - (squared_norm) / (sigma_gpu * sigma_gpu))
+                    nodes_gpu[idx] = nodes_gpu[idx] + lr_i_gpu * hck * (obs_gpu_o - nodes_gpu[idx])'''
             print(i)
             #if i % (epoch / 10) == 0: print(1-pct)
-        self.nodes[:] = nodes.copy()
+        self.nodes[:] = nodes_gpu.get()
 
     def mk_labels(self, obs):
         obs_count = obs.shape[0]
