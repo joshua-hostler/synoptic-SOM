@@ -32,8 +32,8 @@ def main():
 
     mymap = som.SOM(rows=5, cols=7, dim=dim)
 
-    mymap.fit(obs_cpu=vals, lr=1, epoch=1000)
-    mymap.to_csv('1000epoch_gpu.csv')
+    mymap.fit(obs_cpu=vals, lr=1, epoch=20_000)
+    mymap.to_csv('20_000epoch_gpu.csv')
     labels = mymap.mk_labels(vals)
     print(labels)
 

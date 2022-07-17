@@ -59,6 +59,7 @@ class SOM():
 
     #train the SOM
     def fit(self, obs_cpu, lr, epoch):
+        obs_gpu = cp.asarray(obs_cpu)
         obs_count = obs_cpu.shape[0]
         nodes_cpu = np.random.choice(obs_cpu.flatten(), size=(self.rows * self.cols, self.dim), replace=False)
         nodes_gpu = cp.asarray(nodes_cpu)
@@ -77,7 +78,7 @@ class SOM():
             sigma_gpu = cp.asarray(sigma_cpu)
             lr_i_gpu = cp.asarray(lr_i_cpu)
             for o in range(obs_count):
-                obs_gpu_o = cp.asarray(obs_cpu[o,:])
+                obs_gpu_o = obs_gpu[o,:]
                 bmu = self.winning_node(obs_gpu_o, nodes_gpu)
                 diffs = arr_gpu - arr_gpu[bmu]
                 norms = cp.linalg.norm(diffs, axis=1)
