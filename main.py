@@ -6,6 +6,7 @@ import datetime
 from datetime import datetime
 import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
+from cupyx.profiler import benchmark
 #from osgeo import gdal
 
 
@@ -32,8 +33,8 @@ def main():
 
     mymap = som.SOM(rows=5, cols=7, dim=dim)
 
-    mymap.fit(obs_cpu=vals, lr=1, epoch=20_000)
-    mymap.to_csv('20_000epoch_gpu.csv')
+    print(benchmark(mymap.fit(obs_cpu=vals, lr=1, epoch=1000), n_repeat=1))
+    #mymap.to_csv('20_000epoch_gpu.csv')
     labels = mymap.mk_labels(vals)
     print(labels)
 

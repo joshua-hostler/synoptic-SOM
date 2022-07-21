@@ -9,6 +9,7 @@ import matplotlib.patheffects as pe
 import cartopy.crs as ccrs
 import cupy as cp
 
+
 class SOM():
     """
     Self-Organizing Map Algorithm. Not Parallizable. Next iteration will be Batch SOM.
@@ -70,20 +71,22 @@ class SOM():
         arr_gpu = cp.asarray(arr_cpu)
         print('fitting')
         lamb = epoch * obs_count / math.log10(sigma_0)
-        for i in range(epoch):
-            pct_cpu = 1 - (i / epoch)
-            sigma_cpu = sigma_0 * math.exp((-i * epoch)/ lamb)
-            lr_i_cpu = lr * pct_cpu
 
-            sigma_gpu = cp.asarray(sigma_cpu)
-            lr_i_gpu = cp.asarray(lr_i_cpu)
+        epochs = np.arange(epoch)
+        pct_cpu = 1- epochs / epoch
+        sigma_cpu = sigma_0 * np.exp((-epochs * epoch) / lamb)
+        lr_i_cpu = lr * pct_cpu
+
+        sigma_gpu = cp.asarray(sigma_cpu)
+        lr_i_gpu = cp.asarray(lr_i_cpu)
+        for i in range(epoch):
             for o in range(obs_count):
                 obs_gpu_o = obs_gpu[o,:]
                 bmu = self.winning_node(obs_gpu_o, nodes_gpu)
                 diffs = arr_gpu - arr_gpu[bmu]
                 norms = cp.linalg.norm(diffs, axis=1)
-                hck = cp.exp(-cp.square(norms / sigma_gpu))
-                nodes_gpu = nodes_gpu + lr_i_gpu*hck[:, None]*(obs_gpu_o - nodes_gpu)
+                hck = cp.exp(-cp.square(norms / sigma_gpu[i]))
+                nodes_gpu = nodes_gpu + lr_i_gpu[i]*hck[:, None]*(obs_gpu_o - nodes_gpu)
                 #sequential update: slower on gpu because gpu benefits from large arrays
                 '''for idx in range(self.rows * self.cols):
                     squared_norm = ((arr_gpu[idx][0] - arr_gpu[bmu][0]) ** 2) + ((arr_gpu[idx][1] - arr_gpu[bmu][1]) ** 2)
@@ -93,20 +96,26 @@ class SOM():
             #if i % (epoch / 10) == 0: print(1-pct)
         self.nodes[:] = nodes_gpu.get()
 
-    def mk_labels(self, obs):
-        obs_count = obs.shape[0]
+    def mk_labels(self, obs_cpu):
+        obs_count = obs_cpu.shape[0]
+        obs_gpu = cp.asarray(obs_cpu)
         nodes = self.nodes.values.astype(float)
-        idxs = self.nodes.index
-        labels = np.empty((obs_count, 2), dtype=int)
+        nodes_gpu = cp.asarray(nodes)
+        a = self.nodes.index.to_numpy()
+        x = map(np.array, a)
+        idxs_cpu = np.array(list(x))
+        idxs_gpu = cp.asarray(idxs_cpu)
+        labels_cpu = np.empty((obs_count, 2), dtype=int)
+        labels_gpu = cp.asarray(labels_cpu)
         #self.second_best_labels = self.labels
         #self.node_count = np.zeros((self.rows, self.cols), dtype=int)
         #self.errors = np.empty(self.observation_count, dtype=float)
         #te = 0
         #qe = 0
         for o in range(obs_count):
-            obs_o = obs[o, :].astype(float)
-            bmu = self.winning_node(obs_o, nodes)
-            labels[o, :] = idxs[bmu]
+            obs_o = obs_gpu[o, :]
+            bmu = self.winning_node(obs_o, nodes_gpu)
+            labels_gpu[o, :] = idxs_gpu[bmu]
             #self.node_count[idx] += 1
             #flat_dists = np.ravel(self.dists)
             #sbn = np.unravel_index(np.argsort(flat_dists)[1], self.shape)
@@ -117,7 +126,7 @@ class SOM():
 
         #self.te = te / self.observation_count
         #self.qe = qe / self.observation_count
-        return labels
+        return labels_gpu.get()
 
     def to_csv(self, path): #save SOM to csv at path
         self.nodes.to_csv(path)
@@ -267,30 +276,7 @@ class GeoSOM(SOM):
 
         plt.show()
 
-    #count events corresponding with each som grid
-    def count_events(self):
-        '''
-        for event in events:
-            where event_date == obs_date: event_count[obs_node] += 1
-        '''
-        self.node_count = np.zeros((self.rows, self.cols), dtype=int)
-        for obs in range(self.observation_count):
-            node = tuple(self.labels[obs])
-            obs_day = pd.Timestamp(self.ds.time.values[obs]).to_pydatetime()
-            if obs_day.month == 6:
-                if obs_day.day >=11:
-                    if obs_day.year >= 1986 and obs_day.year <= 2012:
-                        strikes = np.where(self.events.LOCALDATET.values == self.ds.time.values[obs])[0].size
-                        self.event_count[node] = self.event_count[node] + strikes
-                        self.node_count[node] += 1
-            elif obs_day.month == 7:
-                if obs_day.day <=20:
-                    if obs_day.year >= 1986 and obs_day.year <= 2012:
-                        strikes = np.where(self.events.LOCALDATET.values == self.ds.time.values[obs])[0].size
-                        self.event_count[node] = self.event_count[node] + strikes
-                        self.node_count[node] += 1
-
-    def plot_events(self): #plot the events in som node arrangement
+    def plot_events(self, df): #plot the events in som node arrangement
         ltgfreq = np.divide(self.event_count, self.node_count)
         ltgfreqm = np.ma.masked_invalid(ltgfreq)
         fig, ax = plt.subplots(1, 1)
