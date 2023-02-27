@@ -6,6 +6,8 @@ import datetime
 from datetime import datetime
 import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split as tts
 from cupyx.profiler import benchmark
 #from osgeo import gdal
 
@@ -13,10 +15,15 @@ from cupyx.profiler import benchmark
 def main():
     #open file
     fn = r'C:\Users\harpe\PycharmProjects\synoptic-SOM\MJJAS_1979_daily.nc'
+    fn2 = 'duff_anom_500z.nc'
     event_fn = r'C:\Users\harpe\PycharmProjects\plsom\Historical_Lightning_1986_2012_ImpactSystem_AlaskaAlbersNAD83.txt'
-    ds = xr.open_dataset(fn)
+    ds = xr.open_dataset(fn2)
     events_df = pd.read_csv(event_fn)
     events_df.LOCALDATET = events_df.LOCALDATET.apply(lambda x: datetime.strptime(x, '%m/%d/%Y %X'))
+    ltg_df = pd.read_csv(r'Z:\PyProj\PHYS_HW1\day_node_east_int.csv', index_col=0, parse_dates=True)
+
+    #print(ds.sel(time=ltg_df.index.values))
+    ds = ds.sel(time=ltg_df.index.values)
 
 
     #flatten the pressure data array
@@ -27,15 +34,26 @@ def main():
     print('obs count: ', count)
     print('dim: ', dim)
     vals = ds['z'].values.reshape(count, dim)
+    vals = np.append(vals, np.log(ltg_df['sum'].values[:, None]+1), axis=1)
+    scaler = StandardScaler()
+    vals_scaled = scaler.fit_transform(vals)
+    vals_train, vals_test = tts(vals_scaled, test_size=0.2, random_state=42)
+    print(vals_test[:,-1])
 
-    idx = np.random.randint(count, size=35)
-    data = vals[idx,:]
+    '''idx = np.random.randint(count, size=12)
+    data = vals[idx,:]'''
 
-    mymap = som.SOM(rows=5, cols=7, dim=dim)
+    s = som.SOM(rows=3, cols=4, dim=dim+1)
 
-    print(benchmark(mymap.fit(obs_cpu=vals, lr=1, epoch=1000), n_repeat=1))
-    #mymap.to_csv('20_000epoch_gpu.csv')
-    labels = mymap.mk_labels(vals)
+    s.fit(obs_cpu=vals_train, lr=1, epoch=5000, k=1, init_fn=None)
+    print(s.nodes.iloc[:, -1])
+    pred = s.predict(vals_test)
+    sqerr = np.square(vals_test[:,-1] - pred)
+    mse = sqerr.mean()
+    print(mse)
+    s.nodes = s.nodes.iloc[:,:-1]
+    s.to_csv('anomaly_5k_34_ltg.csv')
+    labels = s.mk_labels(vals_test)
     print(labels)
 
     secondmap = som.SOM.from_csv('test.csv')

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 import cartopy.crs as ccrs
 import cupy as cp
+import scipy.fftpack
 
 
 class SOM():
@@ -35,6 +36,19 @@ class SOM():
     # return the index of the closest node for an observation
     def winning_node(self, v, nodes):
 
+        '''muv = cp.mean(v)
+        munodes = cp.mean(nodes, axis=1)
+
+        covmatrix = cp.cov(v, nodes, ddof=0)
+        signodes = cp.diag(covmatrix)[1:]
+        sigv = covmatrix[0,0]
+        covar = covmatrix[0,1:]
+
+        numerator = 2*muv*munodes*covar
+        denominator = (cp.square(muv)+cp.square(munodes))*(sigv+signodes)
+
+        SSIM = numerator/denominator
+        idx = cp.argmax(SSIM, axis=None)'''
         diffs = cp.subtract(v, nodes)
         dists = cp.linalg.norm(diffs, axis=1)
         idx = cp.argmin(dists, axis=None)
@@ -59,22 +73,28 @@ class SOM():
                 self.map[idx] = self.map[idx] + lr*hck*(self.current_obs - self.map[idx])'''
 
     #train the SOM
-    def fit(self, obs_cpu, lr, epoch):
-        obs_gpu = cp.asarray(obs_cpu)
+    def fit(self, obs_cpu, lr, epoch, k, init_fn=None):
+        obs_gpu = cp.asarray(obs_cpu, dtype=cp.float16)
         obs_count = obs_cpu.shape[0]
-        nodes_cpu = np.random.choice(obs_cpu.flatten(), size=(self.rows * self.cols, self.dim), replace=False)
-        nodes_gpu = cp.asarray(nodes_cpu)
-        sigma_0 = max(self.rows,self.cols) / 2
+
+        if init_fn:
+            nodes_cpu = pd.read_csv(init_fn, index_col=[0,1])
+            nodes_cpu = nodes_cpu.values
+        else:
+            nodes_cpu = np.random.choice(obs_cpu.flatten(), size=(self.rows * self.cols, self.dim), replace=False)
+
+        nodes_gpu = cp.asarray(nodes_cpu, dtype=cp.float16)
+        sigma_0 = k * max(self.rows,self.cols) / 2
         a = self.nodes.index.to_numpy()
         x = map(np.array, a)
         arr_cpu = np.array(list(x))
         arr_gpu = cp.asarray(arr_cpu)
         print('fitting')
-        lamb = epoch * obs_count / math.log10(sigma_0)
+        lamb = epoch / math.log10(sigma_0)
 
         epochs = np.arange(epoch)
-        pct_cpu = 1- epochs / epoch
-        sigma_cpu = sigma_0 * np.exp((-epochs * epoch) / lamb)
+        sigma_cpu = sigma_0 * np.exp(-epochs / lamb)
+        pct_cpu = 1 - epochs / epoch
         lr_i_cpu = lr * pct_cpu
 
         sigma_gpu = cp.asarray(sigma_cpu)
@@ -85,14 +105,9 @@ class SOM():
                 bmu = self.winning_node(obs_gpu_o, nodes_gpu)
                 diffs = arr_gpu - arr_gpu[bmu]
                 norms = cp.linalg.norm(diffs, axis=1)
-                hck = cp.exp(-cp.square(norms / sigma_gpu[i]))
+                hck = cp.exp(-cp.square(norms / sigma_gpu[i]) / 2)
                 nodes_gpu = nodes_gpu + lr_i_gpu[i]*hck[:, None]*(obs_gpu_o - nodes_gpu)
-                #sequential update: slower on gpu because gpu benefits from large arrays
-                '''for idx in range(self.rows * self.cols):
-                    squared_norm = ((arr_gpu[idx][0] - arr_gpu[bmu][0]) ** 2) + ((arr_gpu[idx][1] - arr_gpu[bmu][1]) ** 2)
-                    hck = math.exp(0.0 - (squared_norm) / (sigma_gpu * sigma_gpu))
-                    nodes_gpu[idx] = nodes_gpu[idx] + lr_i_gpu * hck * (obs_gpu_o - nodes_gpu[idx])'''
-            print(i)
+            print(i, end='')
             #if i % (epoch / 10) == 0: print(1-pct)
         self.nodes[:] = nodes_gpu.get()
 
@@ -127,6 +142,38 @@ class SOM():
         #self.te = te / self.observation_count
         #self.qe = qe / self.observation_count
         return labels_gpu.get()
+
+    #def hits(self, labels):
+
+    def predict(self, obs_cpu, score_func=None):
+        '''predicts the last column based on the first n-1 columns.
+        if score_func provided also returns score'''
+
+        obs_count = obs_cpu.shape[0]
+        obs_gpu = cp.asarray(obs_cpu)
+        nodes = self.nodes.values.astype(float)
+        nodes_gpu = cp.asarray(nodes)
+        a = self.nodes.index.to_numpy()
+        x = map(np.array, a)
+        idxs_cpu = np.array(list(x))
+        idxs_gpu = cp.asarray(idxs_cpu)
+        preds_cpu = np.empty((obs_count, 1), dtype=float)
+        preds_gpu = cp.asarray(preds_cpu)
+        # self.second_best_labels = self.labels
+        # self.node_count = np.zeros((self.rows, self.cols), dtype=int)
+        # self.errors = np.empty(self.observation_count, dtype=float)
+        # te = 0
+        # qe = 0
+        for o in range(obs_count):
+            obs_o = obs_gpu[o, :-1]
+            bmu = self.winning_node(obs_o, nodes_gpu[:,:-1])
+            preds_gpu[o, :] = nodes_gpu[bmu,-1]
+
+        if score_func:
+            score = score_func(preds_gpu, actuals)
+            return preds_gpu.get(), score
+
+        return preds_gpu.get()
 
     def to_csv(self, path): #save SOM to csv at path
         self.nodes.to_csv(path)
@@ -250,60 +297,187 @@ class GeoSOM(SOM):
         return obj
 
     # plot the trained som nodes in a N x M grid
-    def plot_nodes(self):
+    def plot_nodes(self, path_out=None, colormap='coolwarm'):
         N = self.rows
         M = self.cols
-        plt.rcParams.update({'figure.autolayout': True})
+        plt.rcParams.update({'figure.autolayout': True, 'text.usetex': False, 'axes.titlesize': 12})
         fig, axs = plt.subplots(N, M, figsize=(11, 8.5),
-                                subplot_kw={'projection': ccrs.Mercator(central_longitude=190.0,
-                                                                        min_latitude=40.0,
-                                                                        max_latitude=75.0)})
-        clevs = np.linspace(np.min(self.nodes.values), np.max(self.nodes.values), 12)
-        fig.suptitle('SOM arrangement of 500hPa geopotential heights over Alaska for MJJAS', fontsize=20)
+                                subplot_kw={'projection': ccrs.NorthPolarStereo(central_longitude=190.0)})
+        clevs = np.linspace(np.min(self.nodes.values), np.max(self.nodes.values), 20)
+        #fig.suptitle('SOM arrangement of 500hPa geopotential heights over Alaska for MJJAS', fontsize=20)
 
         for idx in self.nodes.index:
             z = self.nodes.loc[idx].values
             z = z.reshape(self.geoshape)
-            axs[idx].contourf(self.lons,
+            cs = axs[idx].contourf(self.lons,
                               self.lats,
                               z,
                               clevs,
                               transform=ccrs.PlateCarree(),
-                              cmap='inferno')
+                              cmap=colormap)
             axs[idx].set_title(f'{idx}')
             axs[idx].coastlines()
             axs[idx].set_extent((170, 240, 45, 75))
 
+        if path_out:
+            plt.savefig(path_out)
+        plt.show()
+        fig, ax = plt.subplots(figsize=(1, 8.5))
+        #fig.subplots_adjust(bottom=0.5)
+        cbar = fig.colorbar(cs, cax=ax, orientation='vertical', cmap=colormap)
+        if path_out:
+            plt.savefig(path_out[:-4] + '_cbar' + path_out[-4:])
         plt.show()
 
     def plot_events(self, df): #plot the events in som node arrangement
-        ltgfreq = np.divide(self.event_count, self.node_count)
-        ltgfreqm = np.ma.masked_invalid(ltgfreq)
-        fig, ax = plt.subplots(1, 1)
-        fig.suptitle("Lightning Strikes per day")
+        sum_by_node = df.groupby(['node']).sum()
+        count_by_node = df.groupby(['node']).count()
+        ltgfreq = sum_by_node.div(count_by_node)
+        ltgfreq = ltgfreq.reindex(index=self.nodes.index)
+        stdv = df.groupby(['node']).std()
+        stdv = stdv.reindex(index=self.nodes.index)
+        fig, ax = plt.subplots(1, 1, figsize=(11, 8.5))
+        #fig.suptitle("Lightning Strokes per day for Eastern Interior Alaska")
         y = np.arange(self.rows)
         x = np.arange(self.cols)
-        ax.pcolormesh(x, y, ltgfreq, shading='nearest', cmap='inferno')
+        ax.pcolormesh(x, y, ltgfreq.values.reshape(self.rows, self.cols), shading='nearest', cmap='coolwarm')
         ax.invert_yaxis()
-        text_kwargs1 = dict(ha='center', va='center', color='k', fontsize=12)
-        for i in range(self.rows):
-            for j in range(self.cols):
-                if not(np.isnan(ltgfreq[i,j])): plt.text(j, i, f'{int(ltgfreq[i, j])}', **text_kwargs1)
-                '''
-                txt = plt.text(j, i, f'{int(ltgfreq[i,j])}',
+        text_kwargs1 = dict(ha='center', va='center', color='k', fontsize=18)
+        for idx in ltgfreq.index:
+            if not(np.isnan(ltgfreq.loc[idx].values)):
+                plt.text(idx[1], idx[0], f'{ltgfreq.loc[idx].values.round(2)}', **text_kwargs1)
+            '''
+            txt = plt.text(j, i, f'{int(ltgfreq[i,j])}',
                                path_effects=[pe.withStroke(linewidth=4, foreground="black")],
                                **text_kwargs1)
-                '''
+            '''
         plt.show()
         #summary file w/ metrics, summary stats, errors
         #the mapping
         #test commit comment
         #plots
 
+    def chi_sq_table(self, df):
+        ltgcount = df.groupby(['node']).sum()
+        ltgcount = ltgcount.reindex(index=self.nodes.index)
+        count = df.groupby(['node']).count().sum()
 
+        sum_by_node = df.groupby(['node']).sum()
+        count_by_node = df.groupby(['node']).count()
+        ltgfreq = sum_by_node.div(count_by_node)
+        ltgfreq = ltgfreq.reindex(index=self.nodes.index)
 
+        print(count)
 
+        rsums = ltgfreq.sum(level=0).values
+        csums = ltgfreq.sum(level=1).values
+        tsum = ltgcount.sum().sum()
+        print(tsum)
+        print(tsum/count)
+        print(rsums)
+        print(csums)
 
+        ecolfreq = self.rows * tsum / count
+        print(ecolfreq)
+        erowfreq = self.cols * tsum / count
+        print(erowfreq)
+
+        rchisq = np.square(rsums - erowfreq.values) / erowfreq.values
+        cchisq = np.square(csums - ecolfreq.values) / ecolfreq.values
+        chisq = rchisq.sum() + cchisq.sum()
+
+        degfree = (self.rows-1)*(self.cols-1)
+
+        return chisq, degfree
+
+    def SBU(self, v, nodes):
+        '''muv = cp.mean(v)
+        munodes = cp.mean(nodes, axis=1)
+
+        covmatrix = cp.cov(v, nodes, ddof=0)
+        signodes = cp.diag(covmatrix)[1:]
+        sigv = covmatrix[0,0]
+        covar = covmatrix[0,1:]
+
+        numerator = 2*muv*munodes*covar
+        denominator = (cp.square(muv)+cp.square(munodes))*(sigv+signodes)
+
+        SSIM = numerator/denominator
+        idx = cp.argsort(SSIM, axis=None)[-2]'''
+
+        diffs = cp.subtract(v, nodes)
+        dists = cp.linalg.norm(diffs, axis=1)
+        idx = cp.argsort(dists, axis=None)[1]
+
+        return idx
+
+    def TE(self, obs_cpu):
+        obs_count = obs_cpu.shape[0]
+        obs_gpu = cp.asarray(obs_cpu)
+        nodes = self.nodes.values.astype(float)
+        nodes_gpu = cp.asarray(nodes)
+        a = self.nodes.index.to_numpy()
+        x = map(np.array, a)
+        idxs_cpu = np.array(list(x))
+        idxs_gpu = cp.asarray(idxs_cpu)
+        labels_cpu = np.empty((obs_count, 2), dtype=int)
+        labels_gpu = cp.asarray(labels_cpu)
+        #self.second_best_labels = self.labels
+        #self.node_count = np.zeros((self.rows, self.cols), dtype=int)
+        #self.errors = np.empty(self.observation_count, dtype=float)
+        #te = 0
+        #qe = 0
+        errcount = 0
+        for o in range(obs_count):
+            obs_o = obs_gpu[o, :]
+            bmu = self.winning_node(obs_o, nodes_gpu)
+            sbu = self.SBU(obs_o, nodes_gpu)
+            if np.linalg.norm(idxs_gpu[bmu]-idxs_gpu[sbu]) > np.sqrt(2): errcount += 1
+            labels_gpu[o, :] = idxs_gpu[bmu]
+
+        return errcount/obs_count
+
+    def annual_freq(self, df):
+        dfo = df.groupby([df.index.year, 'node']).count()
+        idx = pd.MultiIndex.from_product([df.index.year.unique(), df['node'].unique()])
+        #print(dfo.index)
+        dfo = dfo.reindex(idx, fill_value=0).sort_index()
+
+        midx = pd.MultiIndex.from_product([df.index.year.unique(),
+                                           self.nodes.index.get_level_values(0).unique(),
+                                           self.nodes.index.get_level_values(1).unique()])
+        dfo = pd.DataFrame(data=dfo.values, index=midx)
+        dfo = dfo.div(dfo.sum(level=0), axis='index', level=0)
+        dfo = dfo.reorder_levels([1,2,0])
+
+        return dfo
+
+    def plot_freq_series(self, df):
+
+        N = self.rows
+        M = self.cols
+        plt.rcParams.update({'figure.autolayout': True, 'text.usetex': False})
+        fig, axs = plt.subplots(N, M, sharex=True, sharey=True, figsize=(11, 8.5))
+        for idx in self.nodes.index:
+            axs[idx].scatter(df.loc[idx].index, df.loc[idx], color='black', s=12)
+
+        plt.show()
+
+    def plot_freq_event(self, freq, event):
+        dfo = event.groupby([event.index.year]).mean()
+        dfo = dfo.sort_index()
+
+        freq = freq.sort_index()
+
+        N = self.rows
+        M = self.cols
+        plt.rcParams.update({'figure.autolayout': True, 'text.usetex': False})
+        fig, axs = plt.subplots(N, M, sharex=True, sharey=True, figsize=(11, 7))
+        for idx in self.nodes.index:
+
+            axs[idx].scatter(freq.loc[idx].values, dfo.values, color='black', s=12)
+
+        plt.show()
 
 
 
