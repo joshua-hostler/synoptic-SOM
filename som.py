@@ -6,9 +6,18 @@ import xarray as xr
 import math
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
+import matplotlib.path as mpath
+import matplotlib.ticker as mticker
+import matplotlib.colors as mcolors
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import cartopy.crs as ccrs
 import cupy as cp
-import scipy.fftpack
+
+def long_to_180(long):
+    return ((long+180) % 360) - 180
+
+def long_to_360(long):
+    return long % 360
 
 
 class SOM():
@@ -70,7 +79,7 @@ class SOM():
                 idx = np.unravel_index(node, self.shape)
                 squared_norm = ((idx[0]-self.current_winning_node[0]) ** 2) + ((idx[1] - self.current_winning_node[1]) ** 2)
                 hck = math.exp(0.0 - (squared_norm) / (sigma * sigma))
-                self.map[idx] = self.map[idx] + lr*hck*(self.current_obs - self.map[idx])'''
+                self.nodes[idx] = self.nodes[idx] + lr*hck*(self.current_obs - self.nodes[idx])'''
 
     #train the SOM
     def fit(self, obs_cpu, lr, epoch, k, init_fn=None):
@@ -107,7 +116,7 @@ class SOM():
                 norms = cp.linalg.norm(diffs, axis=1)
                 hck = cp.exp(-cp.square(norms / sigma_gpu[i]) / 2)
                 nodes_gpu = nodes_gpu + lr_i_gpu[i]*hck[:, None]*(obs_gpu_o - nodes_gpu)
-            print(i, end='')
+            print(i, end=' ')
             #if i % (epoch / 10) == 0: print(1-pct)
         self.nodes[:] = nodes_gpu.get()
 
@@ -195,59 +204,59 @@ class SOM():
         return obj
 
     def u_matrix(self):
-        um = np.empty(shape=self.shape)
+        um = np.empty(shape=(self.rows, self.cols))
 
         u = 0
         v = 0
-        down = np.linalg.norm(self.map[u + 1, v] - self.map[u, v])
-        right = np.linalg.norm(self.map[u, v + 1] - self.map[u, v])
+        down = np.linalg.norm(self.nodes.loc[u + 1, v] - self.nodes.loc[u, v])
+        right = np.linalg.norm(self.nodes.loc[u, v + 1] - self.nodes.loc[u, v])
         um[u,v] = (down + right) / 2
 
         for v in range(1, self.cols-1):
-            down = np.linalg.norm(self.map[u + 1, v] - self.map[u, v])
-            left = np.linalg.norm(self.map[u, v - 1] - self.map[u, v])
-            right = np.linalg.norm(self.map[u, v + 1] - self.map[u, v])
+            down = np.linalg.norm(self.nodes.loc[u + 1, v] - self.nodes.loc[u, v])
+            left = np.linalg.norm(self.nodes.loc[u, v - 1] - self.nodes.loc[u, v])
+            right = np.linalg.norm(self.nodes.loc[u, v + 1] - self.nodes.loc[u, v])
             um[u,v] = (down + left + right) / 3
 
         v = self.cols-1
-        down = np.linalg.norm(self.map[u + 1, v] - self.map[u, v])
-        left = np.linalg.norm(self.map[u, v - 1] - self.map[u, v])
+        down = np.linalg.norm(self.nodes.loc[u + 1, v] - self.nodes.loc[u, v])
+        left = np.linalg.norm(self.nodes.loc[u, v - 1] - self.nodes.loc[u, v])
         um[u,v] = (down + left) / 2
 
         for u in range(1, self.rows-1):
-            up = np.linalg.norm(self.map[u - 1, v] - self.map[u, v])
-            down = np.linalg.norm(self.map[u + 1, v] - self.map[u, v])
-            left = np.linalg.norm(self.map[u, v - 1] - self.map[u, v])
+            up = np.linalg.norm(self.nodes.loc[u - 1, v] - self.nodes.loc[u, v])
+            down = np.linalg.norm(self.nodes.loc[u + 1, v] - self.nodes.loc[u, v])
+            left = np.linalg.norm(self.nodes.loc[u, v - 1] - self.nodes.loc[u, v])
             um[u,v] = (up + down + left) / 3
 
         u = self.rows-1
-        up = np.linalg.norm(self.map[u - 1, v] - self.map[u, v])
-        left = np.linalg.norm(self.map[u, v - 1] - self.map[u, v])
+        up = np.linalg.norm(self.nodes.loc[u - 1, v] - self.nodes.loc[u, v])
+        left = np.linalg.norm(self.nodes.loc[u, v - 1] - self.nodes.loc[u, v])
         um[u,v] = (up + left) / 2
 
         for v in range(1, self.cols-1):
-            up = np.linalg.norm(self.map[u - 1, v] - self.map[u, v])
-            left = np.linalg.norm(self.map[u, v - 1] - self.map[u, v])
-            right = np.linalg.norm(self.map[u, v + 1] - self.map[u, v])
+            up = np.linalg.norm(self.nodes.loc[u - 1, v] - self.nodes.loc[u, v])
+            left = np.linalg.norm(self.nodes.loc[u, v - 1] - self.nodes.loc[u, v])
+            right = np.linalg.norm(self.nodes.loc[u, v + 1] - self.nodes.loc[u, v])
             um[u,v] = (up + left + right) / 3
 
         v = 0
-        up = np.linalg.norm(self.map[u - 1, v] - self.map[u, v])
-        right = np.linalg.norm(self.map[u, v + 1] - self.map[u, v])
+        up = np.linalg.norm(self.nodes.loc[u - 1, v] - self.nodes.loc[u, v])
+        right = np.linalg.norm(self.nodes.loc[u, v + 1] - self.nodes.loc[u, v])
         um[u,v] = (up + right) / 2
 
         for u in range(1, self.rows-1):
-            up = np.linalg.norm(self.map[u - 1, v] - self.map[u, v])
-            down = np.linalg.norm(self.map[u + 1, v] - self.map[u, v])
-            right = np.linalg.norm(self.map[u, v + 1] - self.map[u, v])
+            up = np.linalg.norm(self.nodes.loc[u - 1, v] - self.nodes.loc[u, v])
+            down = np.linalg.norm(self.nodes.loc[u + 1, v] - self.nodes.loc[u, v])
+            right = np.linalg.norm(self.nodes.loc[u, v + 1] - self.nodes.loc[u, v])
             um[u,v] = (up + down + right) / 3
 
         for u in range(1, self.rows-1):
             for v in range(1,self.cols-1):
-                up = np.linalg.norm(self.map[u - 1, v] - self.map[u, v])
-                down = np.linalg.norm(self.map[u + 1, v] - self.map[u, v])
-                left = np.linalg.norm(self.map[u, v - 1] - self.map[u, v])
-                right = np.linalg.norm(self.map[u, v + 1] - self.map[u, v])
+                up = np.linalg.norm(self.nodes.loc[u - 1, v] - self.nodes.loc[u, v])
+                down = np.linalg.norm(self.nodes.loc[u + 1, v] - self.nodes.loc[u, v])
+                left = np.linalg.norm(self.nodes.loc[u, v - 1] - self.nodes.loc[u, v])
+                right = np.linalg.norm(self.nodes.loc[u, v + 1] - self.nodes.loc[u, v])
                 um[u, v] = (up + down + left + right) / 4
 
         fig, ax = plt.subplots(1, 1)
@@ -297,34 +306,87 @@ class GeoSOM(SOM):
         return obj
 
     # plot the trained som nodes in a N x M grid
-    def plot_nodes(self, path_out=None, colormap='coolwarm'):
+    def plot_nodes(self, path_out=None, colormap='coolwarm', nclevs=12, clevs=None):
         N = self.rows
         M = self.cols
+
         plt.rcParams.update({'figure.autolayout': True, 'text.usetex': False, 'axes.titlesize': 12})
-        fig, axs = plt.subplots(N, M, figsize=(11, 8.5),
-                                subplot_kw={'projection': ccrs.NorthPolarStereo(central_longitude=190.0)})
-        clevs = np.linspace(np.min(self.nodes.values), np.max(self.nodes.values), 20)
+        fig, axs = plt.subplots(N, M, figsize=(14, 8.5),
+                                subplot_kw={'projection': ccrs.AlbersEqualArea(central_longitude=-154,
+                                                                               central_latitude=50,
+                                                                               standard_parallels=(55, 65))})
+
+        clmin = np.min(self.nodes.values)
+        clmax = np.max(self.nodes.values)
+
+        if colormap == 'coolwarm':
+            assert nclevs % 2 == 0, "nclevs must be even for diverging colormaps."
+            absmax = np.max([np.abs(clmin), np.abs(clmax)])
+            clmax = absmax
+            clmin = np.negative(absmax)
+            cmap = mcolors.LinearSegmentedColormap.from_list(name='red_white_blue',
+                                                             colors=[(0, 0, 1),
+                                                                     (1, 1, 1),
+                                                                     (1, 0, 0)],
+                                                             N=nclevs-1)
+        if clevs is None:
+            clevs = np.linspace(clmin, clmax, nclevs)
+        #clevs = np.linspace(np.min(self.nodes.values), np.max(self.nodes.values), 12)
         #fig.suptitle('SOM arrangement of 500hPa geopotential heights over Alaska for MJJAS', fontsize=20)
 
+        n = 50
+        west = 170
+        east = 240
+        south = 45
+        north = 75
+
+        codes = np.full(n * 4, 2)
+        codes[0] = 1
+        codes[-1] = 79
+
+        aoi = mpath.Path(
+            list(zip(np.linspace(west, east, n), np.full(n, north))) + \
+            list(zip(np.full(n, east), np.linspace(north, south, n))) + \
+            list(zip(np.linspace(east, west, n), np.full(n, south))) + \
+            list(zip(np.full(n, west), np.linspace(south, north, n))), codes
+
+        )
+
+        proj2data = ccrs.PlateCarree()._as_mpl_transform(axs[(0,0)]) - axs[(0,0)].transData
+        aoi_in_target = proj2data.transform_path(aoi)
+
         for idx in self.nodes.index:
-            z = self.nodes.loc[idx].values
+            z = self.nodes.loc[idx].values.astype('float')
             z = z.reshape(self.geoshape)
-            cs = axs[idx].contourf(self.lons,
-                              self.lats,
-                              z,
-                              clevs,
+            cs = axs[idx].contourf(self.lons, self.lats, z,
+                                   clevs,
+                                   transform=ccrs.PlateCarree(),
+                                   cmap=cmap)
+            axs[idx].contour(self.lons, self.lats, z, clevs,
                               transform=ccrs.PlateCarree(),
-                              cmap=colormap)
+                              colors='k', linewidths=1.0)
             axs[idx].set_title(f'{idx}')
+            axs[idx].set_boundary(aoi_in_target)
+            gl = axs[idx].gridlines(crs=ccrs.PlateCarree(), draw_labels=False,
+                              rotate_labels=False, x_inline=False, y_inline=False,
+                              linestyle='--', color='grey', alpha=0.3)
+            gl.xlocator = mticker.FixedLocator(long_to_180(np.linspace(west, east, 8)))
+            gl.right_labels = False
+            gl.top_labels = False
+            gl.left_labels = False
+            gl.bottom_labels = False
+            gl.xformatter = LONGITUDE_FORMATTER
+            gl.yformatter = LATITUDE_FORMATTER
             axs[idx].coastlines()
-            axs[idx].set_extent((170, 240, 45, 75))
+            axs[idx].set_extent((170, 240, 45-1, 75), crs=ccrs.PlateCarree())
 
         if path_out:
             plt.savefig(path_out)
         plt.show()
-        fig, ax = plt.subplots(figsize=(1, 8.5))
+        fig, ax = plt.subplots(figsize=(14, 1))
         #fig.subplots_adjust(bottom=0.5)
-        cbar = fig.colorbar(cs, cax=ax, orientation='vertical', cmap=colormap)
+        cbar = fig.colorbar(cs, cax=ax, orientation='horizontal', cmap=colormap)
+        cbar.set_ticks(ticks=clevs, labels=clevs)
         if path_out:
             plt.savefig(path_out[:-4] + '_cbar' + path_out[-4:])
         plt.show()
@@ -479,11 +541,42 @@ class GeoSOM(SOM):
 
         plt.show()
 
+def SSIM(obs_cpu):
+    obs_gpu = cp.asarray(obs_cpu, dtype=cp.float16)
+    obs_count = obs_cpu.shape[0]
+    SSIM = np.zeros((obs_count,obs_count), dtype=np.float16)
+    L = obs_gpu.max() - obs_gpu.min()
+    c1 = cp.square(.01*L)
+    c2 = cp.square(0.03*L)
+    means =  cp.mean(obs_gpu, axis=1)
+    covmatrix = cp.cov(obs_gpu, ddof=0)
+    for o in range(obs_count):
+        if o % (obs_count / 10) < 1: print(o / obs_count)
+        #obs_gpu_o = obs_gpu[o, :]
+        muv = means[o]
+        #munodes = cp.mean(obs_gpu[o:, :], axis=1)
+
+        #covmatrix = cp.cov(obs_gpu_o, obs_gpu[o:,:], ddof=0)
+        signodes = cp.diag(covmatrix)[o:].copy()
+        sigv = covmatrix[o,o].copy()
+        covar = covmatrix[o,o:].copy()
+
+        numerator = (2*muv*means[o:] + c1) * (2*covar + c2)
+        denominator = (cp.square(muv) + cp.square(means[o:]) + c1)*(sigv + signodes + c2)
+
+        SSIM_o = numerator / denominator
+        SSIM[o,o:] = SSIM_o.get().copy()
+        SSIM[o:,o] = SSIM[o,o:].copy()
+
+    return SSIM
+    #add channel weights as hyper parameters
 
 
 
 
-    """
+
+
+"""
     Next Steps:
     1. how many obs in each node
     2. label obs to each node
@@ -501,4 +594,4 @@ class GeoSOM(SOM):
     count days/node in duff season
     count lightning per node in duff season
     generate lightning strikes/day for each node duff season.
-    """
+"""
