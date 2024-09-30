@@ -40,7 +40,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ## References
-Alaska Interagency Coordination Center. (n.d.). Predictive services - maps/imagery/geospatial. AICC - Predictive Services - maps/imagery/geospatial. https://fire.ak.blm.gov/predsvcs/maps.php 
+Alaska Interagency Coordination Center. (n.d.). Predictive services - maps/imagery/geospatial. AICC - Predictive Services - maps/imagery/geospatial. https://fire.ak.blm.gov/predsvcs/maps.php
+
 Kohonen, T., 1990: The self-organizing map. Proceedings of the IEEE, 78, 1464–1480, https://doi.org/10.1109/5.58325.
 
 ## Acknowledgments
