@@ -1,4 +1,5 @@
 # synoptic-SOM
+[![DOI](https://zenodo.org/badge/500991505.svg)](https://doi.org/10.5281/zenodo.13864055)
 
 ## Overview
 This reposity contains a python implementation of the Self-Organizing Map (Kohonen 1990) for applications in synoptic climatology, developed for the 
