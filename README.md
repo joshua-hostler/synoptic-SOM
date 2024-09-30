@@ -8,7 +8,9 @@ geopoential height (Z) SOM nodes, and a csv table of the daily synoptic types de
 ## Computational Requirements
 
 ### Software Requirments
-This library is entirely contained within Python and CUDA (implicitly via the cupy library). The environment to execute the gridding toolkit can be set up in conda with the provided requirements.txt.
+This library is entirely contained within Python and CUDA (implicitly via the cupy library). The environment to execute 
+the synoptic-SOM can be set up in conda with the provided requirements.txt. Additionally, some helper functions are included
+in the geospatial_utils.py file.
 
 ### Memory and Runtime
 This toolkit was last run on 9-30-2024 on a Windows 11 PC with an AMD Ryzen 9 3900x, 32GB of RAM, and an RTX2080. Time to train a 4x5 SOM on daily pressure fields for June-July of the 2004-2022 period is about 1 hour. Current implementation requires an Nvidia GPU with CUDA enabled.
