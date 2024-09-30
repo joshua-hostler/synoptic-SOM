@@ -19,7 +19,6 @@ def long_to_180(long):
 def long_to_360(long):
     return long % 360
 
-
 class SOM():
     """
     Self-Organizing Map Algorithm. Not Parallizable. Next iteration will be Batch SOM.
