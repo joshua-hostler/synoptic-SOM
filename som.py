@@ -65,22 +65,6 @@ class SOM():
 
         return idx
 
-    '''#update map weights, current_epoch, learning rate, sigma
-    def update(self):
-        lamb = self.max_epoch * self.observation_count / math.log10(self.sigma)
-        pct = 1 - (self.current_iter / (self.max_epoch * self.observation_count))
-        sigma = self.sigma * math.exp(-self.current_iter / lamb)
-        lr = self.lr * pct
-        for obs in range(self.observation_count):
-            self.current_obs = self.records[obs, :]
-            self.winning_node()
-            self.current_iter += 1
-            for node in self.nodes:
-                idx = np.unravel_index(node, self.shape)
-                squared_norm = ((idx[0]-self.current_winning_node[0]) ** 2) + ((idx[1] - self.current_winning_node[1]) ** 2)
-                hck = math.exp(0.0 - (squared_norm) / (sigma * sigma))
-                self.nodes[idx] = self.nodes[idx] + lr*hck*(self.current_obs - self.nodes[idx])'''
-
     #train the SOM
     def fit(self, obs_cpu, lr, epoch, k, init_fn=None):
         obs_gpu = cp.asarray(obs_cpu, dtype=cp.float16)
@@ -131,28 +115,13 @@ class SOM():
         idxs_gpu = cp.asarray(idxs_cpu)
         labels_cpu = np.empty((obs_count, 2), dtype=int)
         labels_gpu = cp.asarray(labels_cpu)
-        #self.second_best_labels = self.labels
-        #self.node_count = np.zeros((self.rows, self.cols), dtype=int)
-        #self.errors = np.empty(self.observation_count, dtype=float)
-        #te = 0
-        #qe = 0
+
         for o in range(obs_count):
             obs_o = obs_gpu[o, :]
             bmu = self.winning_node(obs_o, nodes_gpu)
             labels_gpu[o, :] = idxs_gpu[bmu]
-            #self.node_count[idx] += 1
-            #flat_dists = np.ravel(self.dists)
-            #sbn = np.unravel_index(np.argsort(flat_dists)[1], self.shape)
-            #self.second_best_labels[obs, :] = sbn
-            #if np.linalg.norm(np.asarray(sbn) - np.asarray(idx)) > math.sqrt(2):
-            #    te += 1.0
-            #qe = qe + self.dists[idx]
 
-        #self.te = te / self.observation_count
-        #self.qe = qe / self.observation_count
         return labels_gpu.get()
-
-    #def hits(self, labels):
 
     def predict(self, obs_cpu, score_func=None):
         '''predicts the last column based on the first n-1 columns.
@@ -301,8 +270,6 @@ class GeoSOM(SOM):
         for r in range(rows):
             for c in range(cols):
                 obj.nodes.loc[r,c] = ds.field.values[r,c,:,:].reshape(lats.shape[0]*lons.shape[0])
-        '''obj.nodes[:] = ds.field.values.reshape(rows*cols, lats.shape[0]*lons.shape[0])'''
-
         return obj
 
     # plot the trained som nodes in a N x M grid
@@ -331,8 +298,6 @@ class GeoSOM(SOM):
                                                              N=nclevs-1)
         if clevs is None:
             clevs = np.linspace(clmin, clmax, nclevs)
-        #clevs = np.linspace(np.min(self.nodes.values), np.max(self.nodes.values), 12)
-        #fig.suptitle('SOM arrangement of 500hPa geopotential heights over Alaska for MJJAS', fontsize=20)
 
         n = 50
         west = 170
@@ -484,11 +449,6 @@ class GeoSOM(SOM):
         idxs_gpu = cp.asarray(idxs_cpu)
         labels_cpu = np.empty((obs_count, 2), dtype=int)
         labels_gpu = cp.asarray(labels_cpu)
-        #self.second_best_labels = self.labels
-        #self.node_count = np.zeros((self.rows, self.cols), dtype=int)
-        #self.errors = np.empty(self.observation_count, dtype=float)
-        #te = 0
-        #qe = 0
         errcount = 0
         for o in range(obs_count):
             obs_o = obs_gpu[o, :]
@@ -572,26 +532,3 @@ def SSIM(obs_cpu):
     #add channel weights as hyper parameters
 
 
-
-
-
-
-"""
-    Next Steps:
-    1. how many obs in each node
-    2. label obs to each node
-        a. error
-    3. error(QE, TE, Sammon->TI)
-    4. U-Matrix - done
-    5. errors per epoch
-    6. repeat cassanos' metrics
-    8. reorganize class structure
-    9. Event based analysis
-    lightning meta data: lat, lon, datetime
-    10. output the labels
-    
-    train on MJJAS SOM on full record
-    count days/node in duff season
-    count lightning per node in duff season
-    generate lightning strikes/day for each node duff season.
-"""
